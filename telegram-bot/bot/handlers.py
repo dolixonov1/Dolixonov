@@ -12,7 +12,7 @@ URL_REGEX = re.compile(r"https?://[\w./?=&%-]+", re.IGNORECASE)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 VortexFetchBot'ga xush kelibsiz!\nYouTube, Instagram, TikTok yoki boshqa ijtimoiy tarmoqlardan video havolasini yuboring, men sizga videoni yuklab beraman."
+        "👋 DolixonovBot'ga xush kelibsiz!\nYouTube, Instagram, TikTok yoki boshqa ijtimoiy tarmoqlardan video havolasini yuboring, men sizga videoni yuklab beraman."
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
