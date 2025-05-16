@@ -5,6 +5,12 @@ import uuid
 class DownloadError(Exception):
     pass
 
+def get_format_selection(url: str):
+    """URL ga qarab format tanlash"""
+    if 'tiktok.com' in url:
+        return 'best[vcodec!=none][ext=mp4]'
+    return 'best'
+
 def download_video(url: str, download_dir: str, progress_callback=None) -> str:
     """
     Downloads video from the given URL using yt-dlp.
@@ -16,18 +22,31 @@ def download_video(url: str, download_dir: str, progress_callback=None) -> str:
         os.makedirs(download_dir)
     filename = f"video_{uuid.uuid4().hex}.mp4"
     output_path = os.path.join(download_dir, filename)
-    # Check for cookies.txt (Netscape format) in the same directory as this file
+    
+    # Check for cookies.txt in the same directory as this file
     cookies_path = os.path.join(os.path.dirname(__file__), 'cookies.txt')
+    
     ydl_opts = {
         'outtmpl': output_path,
-        'format': 'best',
+        'format': get_format_selection(url),
         'merge_output_format': 'mp4',
         'quiet': True,
+        'no_warnings': True,
         'noplaylist': True,
         'progress_hooks': [progress_callback] if progress_callback else [],
+        # TikTok uchun qo'shimcha sozlamalar
+        'extractor_args': {
+            'tiktok': {
+                'embed_thumbnail': False,
+                'embed_metadata': False,
+                'force_generic_extractor': False
+            }
+        }
     }
+    
     if os.path.exists(cookies_path):
         ydl_opts['cookiefile'] = cookies_path
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -46,7 +65,6 @@ def download_video(url: str, download_dir: str, progress_callback=None) -> str:
     except Exception as e:
         raise DownloadError(str(e))
 
-
 def download_video_with_info(url: str, download_dir: str):
     """
     Yuklab olingan video path va info dict (yt-dlp metadata) ni qaytaradi.
@@ -56,15 +74,27 @@ def download_video_with_info(url: str, download_dir: str):
     filename = f"video_{uuid.uuid4().hex}.mp4"
     output_path = os.path.join(download_dir, filename)
     cookies_path = os.path.join(os.path.dirname(__file__), 'cookies.txt')
+    
     ydl_opts = {
         'outtmpl': output_path,
-        'format': 'best',
+        'format': get_format_selection(url),
         'merge_output_format': 'mp4',
         'quiet': True,
+        'no_warnings': True,
         'noplaylist': True,
+        # TikTok uchun qo'shimcha sozlamalar
+        'extractor_args': {
+            'tiktok': {
+                'embed_thumbnail': False,
+                'embed_metadata': False,
+                'force_generic_extractor': False
+            }
+        }
     }
+    
     if os.path.exists(cookies_path):
         ydl_opts['cookiefile'] = cookies_path
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
