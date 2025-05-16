@@ -1,4 +1,5 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMemberStatus
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes, CallbackQueryHandler
 from bot.downloader import download_video, DownloadError
 import os
