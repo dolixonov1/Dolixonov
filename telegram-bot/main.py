@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-from bot.handlers import start, help_command, handle_message, extract_audio
+from bot.handlers import start, help_command, handle_message, extract_audio, handle_quality_selection
 
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -21,6 +21,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(extract_audio, pattern=r"^get_audio:"))
+    application.add_handler(CallbackQueryHandler(handle_quality_selection, pattern=r"^quality:"))
 
     print("Bot started...")
     application.run_polling()

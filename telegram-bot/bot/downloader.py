@@ -11,7 +11,43 @@ def get_format_selection(url: str):
         return 'best[vcodec!=none][ext=mp4]'
     return 'best'
 
-def download_video(url: str, download_dir: str, progress_callback=None) -> str:
+def get_video_formats(url: str) -> list:
+    """
+    Get available video formats for the given URL
+    Returns list of dicts with format info
+    """
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'extract_flat': True
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            formats = []
+            if 'formats' in info:
+                for f in info['formats']:
+                    if f.get('vcodec', 'none') != 'none':  # Only video formats
+                        format_id = f.get('format_id', '')
+                        ext = f.get('ext', '')
+                        resolution = f.get('resolution', 'unknown')
+                        filesize = f.get('filesize', 0)
+                        if filesize == 0:
+                            filesize = f.get('filesize_approx', 0)
+                        
+                        size_mb = filesize / (1024 * 1024) if filesize else 0
+                        formats.append({
+                            'format_id': format_id,
+                            'ext': ext,
+                            'resolution': resolution,
+                            'filesize': f"{size_mb:.1f}MB" if size_mb > 0 else "Unknown"
+                        })
+            return formats
+    except Exception as e:
+        raise DownloadError(f"Error getting video formats: {str(e)}")
+
+def download_video(url: str, download_dir: str, format_id: str = None, progress_callback=None) -> str:
     """
     Downloads video from the given URL using yt-dlp.
     Supports restricted videos by using cookies.json if present.
@@ -28,7 +64,7 @@ def download_video(url: str, download_dir: str, progress_callback=None) -> str:
     
     ydl_opts = {
         'outtmpl': output_path,
-        'format': get_format_selection(url),
+        'format': format_id if format_id else get_format_selection(url),
         'merge_output_format': 'mp4',
         'quiet': True,
         'no_warnings': True,

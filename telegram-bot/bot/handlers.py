@@ -1,10 +1,11 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler
-from bot.downloader import download_video, DownloadError
+from bot.downloader import download_video, DownloadError, get_video_formats
 import os
 import re
 import subprocess
 from pathlib import Path
+import uuid
 
 DOWNLOAD_DIR = "downloads"
 
@@ -93,138 +94,173 @@ async def extract_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 import requests
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    urls = URL_REGEX.findall(text)
-    if not urls:
-        await update.message.reply_text(
-            "❗ No valid video link detected. Please send a correct video URL."
-        )
+async def handle_quality_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if not query.data.startswith("quality:"):
         return
-    url = urls[0]
-    msg = await update.message.reply_text("⏳ Fayl yuklanmoqda. Iltimos, kuting...")
+        
+    format_id = query.data.split(":")[1]
+    url = context.user_data.get('last_url')
+    if not url:
+        await query.message.edit_text("❌ URL topilmadi. Iltimos, qaytadan urinib ko'ring.")
+        return
+        
+    msg = await query.message.edit_text("⏳ Video yuklanmoqda. Iltimos, kuting...")
     try:
-
-        import uuid
         unique_id = str(uuid.uuid4())
         video_path = os.path.join(DOWNLOAD_DIR, f"video_{unique_id}.mp4")
         compressed_path = os.path.join(DOWNLOAD_DIR, f"video_{unique_id}_compressed.mp4")
+        
         try:
-            # Video va info ni qaytaradigan yangi funksiya ishlatiladi
-            from bot.downloader import download_video_with_info
-            video_path, video_info = download_video_with_info(url, DOWNLOAD_DIR)
+            video_path = download_video(url, DOWNLOAD_DIR, format_id=format_id)
             file_size = os.path.getsize(video_path)
-            max_telegram_size = 2 * 1024 * 1024 * 1024  # 2 GB (Telegram max file size)
-            def get_network_name(url):
-                if 'instagram.com' in url:
-                    return 'Instagram'
-                elif 'youtube.com' in url or 'youtu.be' in url:
-                    return 'YouTube'
-                elif 'tiktok.com' in url:
-                    return 'TikTok'
-                elif 'facebook.com' in url:
-                    return 'Facebook'
-                elif 'twitter.com' in url or 'x.com' in url:
-                    return 'Twitter'
-                elif 'vk.com' in url:
-                    return 'VK'
-                elif 'reddit.com' in url:
-                    return 'Reddit'
-                elif 'vimeo.com' in url:
-                    return 'Vimeo'
-                elif 'dailymotion.com' in url:
-                    return 'Dailymotion'
-                elif 'likee.video' in url:
-                    return 'Likee'
-                elif 'pinterest.com' in url:
-                    return 'Pinterest'
-                else:
-                    return 'Video'
+            max_telegram_size = 2 * 1024 * 1024 * 1024
+            
             network_name = get_network_name(url)
-            # Video sarlavhasi (ijtimoiy tarmoqdagi nomi)
-            video_title = video_info.get('title') or os.path.splitext(os.path.basename(video_path))[0]
-            caption = f"{network_name}: {video_title}"
-            ext = os.path.splitext(video_path)[1].lower()
-            image_exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
+            caption = f"{network_name} video"
+            
             if file_size <= max_telegram_size:
                 with open(video_path, "rb") as file:
-                    if ext in image_exts:
-                        await update.message.reply_photo(file, caption=caption)
-                    else:
-                        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-                        audio_button = InlineKeyboardMarkup([
-                            [InlineKeyboardButton(text="🎵 Audio yuklab olish", callback_data=f"get_audio:{unique_id}")]
-                        ])
-                        await update.message.reply_video(file, caption=caption, reply_markup=audio_button)
-                await msg.delete()
-            elif file_size <= 2 * 1024 * 1024 * 1024:  # 2 GB
-                with open(video_path, "rb") as file:
-                    if ext in image_exts:
-                        await update.message.reply_photo(file, caption=caption)
-                    else:
-                        await update.message.reply_document(file, caption=caption)
+                    audio_button = InlineKeyboardMarkup([
+                        [InlineKeyboardButton(text="🎵 Audio yuklab olish", callback_data=f"get_audio:{unique_id}")]
+                    ])
+                    await query.message.reply_video(file, caption=caption, reply_markup=audio_button)
                 await msg.delete()
             else:
-                # Video 2 GB dan katta bo'lsa, siqiladi
                 await msg.edit_text("⚠️ Fayl 2 GB dan katta! Video siqilmoqda, kuting...")
-                from bot.video_compress import compress_video
-                compress_video(video_path, compressed_path, target_size_mb=2000)  # 2 GB limit uchun
-                compressed_size = os.path.getsize(compressed_path)
-                if compressed_size > 2 * 1024 * 1024 * 1024:
-                    # Fayl hamon katta bo'lsa, foydalanuvchiga link orqali yuklab olishni taklif qilish
-                    await msg.edit_text("❌ Siqilgan video ham 2 GB dan katta. Telegram orqali yuborib bo'lmaydi. Faylni tashqi hostingga yuklab, link yuborilmoqda...")
-                    try:
-                        import requests
-                        with open(compressed_path, 'rb') as f:
-                            resp = requests.put('https://transfer.sh/video.mp4', data=f)
-                        if resp.status_code == 200:
-                            await msg.edit_text(f"🔗 Faylni bu link orqali yuklab olishingiz mumkin: {resp.text.strip()}")
-                        else:
-                            await msg.edit_text("❌ Faylni tashqi hostingga yuklab bo'lmadi. Iltimos, kichikroq video yuboring.")
-                    except Exception as e:
-                        await msg.edit_text(f"❌ Faylni tashqi hostingga yuklashda xatolik: {e}")
-                    return
-                await msg.edit_text("⏳ Video siqildi. Endi Telegramga yuklanmoqda...")
+                compress_video(video_path, compressed_path, target_size_mb=2000)
                 with open(compressed_path, "rb") as file:
-                    await update.message.reply_document(file, caption=caption)
+                    await query.message.reply_document(file, caption=caption)
                 await msg.delete()
-
+                
         except Exception as e:
-            err_msg = str(e)
-            if 'There is no video in this post' in err_msg:
-                # Instagram rasmli post uchun fallback
-                try:
-                    import requests
-                    from bs4 import BeautifulSoup
-                    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-                    soup = BeautifulSoup(resp.text, 'html.parser')
-                    og_image = soup.find('meta', property='og:image')
-                    image_url = og_image['content'] if og_image else None
-                    if image_url:
-                        # Try to get higher resolution by replacing size in URL
-                        highres_url = image_url.replace('s150x150', 's1080x1080').replace('p150x150', 'p1080x1080')
-                        img_resp = requests.get(highres_url)
-                        from io import BytesIO
-                        img_bytes = BytesIO(img_resp.content)
-                        img_bytes.name = 'instagram.jpg'
-                        await update.message.reply_photo(img_bytes, caption="Instagram: Rasmli post")
-                        await msg.delete()
-                    else:
-                        await msg.edit_text("❗ Bu postda video ham, rasm ham topilmadi.")
-                except Exception as ex:
-                    await msg.edit_text(f"❗ Video va rasm yuklanmadi: {ex}")
-            else:
-                await msg.edit_text(f"❌ Video jarayonida xatolik: {e}")
+            await msg.edit_text(f"❌ Video yuklab olishda xatolik: {e}")
+            
         finally:
-            # Har doim vaqtinchalik fayllarni tozalash
             for f in [video_path, compressed_path]:
                 try:
                     if os.path.exists(f):
                         os.remove(f)
                 except Exception:
                     pass
-
-    except DownloadError as e:
-        await msg.edit_text(f"❌ Error while downloading: {e}")
+                    
     except Exception as e:
-        await msg.edit_text(f"❌ An unexpected error occurred: {e}")
+        await msg.edit_text(f"❌ Kutilmagan xatolik: {e}")
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    urls = URL_REGEX.findall(text)
+    if not urls:
+        await update.message.reply_text(
+            "❗ Video havolasi topilmadi. Iltimos, to'g'ri havola yuboring."
+        )
+        return
+        
+    url = urls[0]
+    msg = await update.message.reply_text("⏳ Video formatlari tekshirilmoqda...")
+    
+    try:
+        # Save URL for quality selection callback
+        context.user_data['last_url'] = url
+        
+        # Get available formats
+        formats = get_video_formats(url)
+        if not formats:
+            # If no formats available, download with default quality
+            await msg.edit_text("⏳ Video yuklanmoqda...")
+            return await download_and_send_video(update, context, url, msg)
+            
+        # Create quality selection buttons
+        buttons = []
+        for fmt in formats:
+            if fmt['resolution'] != 'unknown':
+                btn_text = f"{fmt['resolution']} ({fmt['filesize']})"
+                buttons.append([InlineKeyboardButton(
+                    text=btn_text,
+                    callback_data=f"quality:{fmt['format_id']}"
+                )])
+                
+        # Add "Best Quality" button
+        buttons.append([InlineKeyboardButton(
+            text="🎯 Eng yuqori sifat",
+            callback_data="quality:best"
+        )])
+        
+        markup = InlineKeyboardMarkup(buttons)
+        await msg.edit_text(
+            "🎥 Video sifatini tanlang:",
+            reply_markup=markup
+        )
+        
+    except Exception as e:
+        await msg.edit_text(f"❌ Xatolik yuz berdi: {e}")
+
+async def download_and_send_video(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str, msg):
+    try:
+        unique_id = str(uuid.uuid4())
+        video_path = os.path.join(DOWNLOAD_DIR, f"video_{unique_id}.mp4")
+        compressed_path = os.path.join(DOWNLOAD_DIR, f"video_{unique_id}_compressed.mp4")
+        
+        try:
+            video_path = download_video(url, DOWNLOAD_DIR)
+            file_size = os.path.getsize(video_path)
+            max_telegram_size = 2 * 1024 * 1024 * 1024
+            
+            network_name = get_network_name(url)
+            caption = f"{network_name} video"
+            
+            if file_size <= max_telegram_size:
+                with open(video_path, "rb") as file:
+                    audio_button = InlineKeyboardMarkup([
+                        [InlineKeyboardButton(text="🎵 Audio yuklab olish", callback_data=f"get_audio:{unique_id}")]
+                    ])
+                    await update.message.reply_video(file, caption=caption, reply_markup=audio_button)
+                await msg.delete()
+            else:
+                await msg.edit_text("⚠️ Fayl 2 GB dan katta! Video siqilmoqda, kuting...")
+                compress_video(video_path, compressed_path, target_size_mb=2000)
+                with open(compressed_path, "rb") as file:
+                    await update.message.reply_document(file, caption=caption)
+                await msg.delete()
+                
+        except Exception as e:
+            await msg.edit_text(f"❌ Video yuklab olishda xatolik: {e}")
+            
+        finally:
+            for f in [video_path, compressed_path]:
+                try:
+                    if os.path.exists(f):
+                        os.remove(f)
+                except Exception:
+                    pass
+                    
+    except Exception as e:
+        await msg.edit_text(f"❌ Kutilmagan xatolik: {e}")
+
+def get_network_name(url):
+    if 'instagram.com' in url:
+        return 'Instagram'
+    elif 'youtube.com' in url or 'youtu.be' in url:
+        return 'YouTube'
+    elif 'tiktok.com' in url:
+        return 'TikTok'
+    elif 'facebook.com' in url:
+        return 'Facebook'
+    elif 'twitter.com' in url or 'x.com' in url:
+        return 'Twitter'
+    elif 'vk.com' in url:
+        return 'VK'
+    elif 'reddit.com' in url:
+        return 'Reddit'
+    elif 'vimeo.com' in url:
+        return 'Vimeo'
+    elif 'dailymotion.com' in url:
+        return 'Dailymotion'
+    elif 'likee.video' in url:
+        return 'Likee'
+    elif 'pinterest.com' in url:
+        return 'Pinterest'
+    else:
+        return 'Video'
