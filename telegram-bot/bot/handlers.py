@@ -1,5 +1,4 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ChatMemberStatus
 from telegram.ext import ContextTypes, CallbackQueryHandler
 from bot.downloader import download_video, DownloadError
 import os
@@ -8,64 +7,17 @@ import subprocess
 from pathlib import Path
 
 DOWNLOAD_DIR = "downloads"
-CHANNEL_ID = os.getenv("CHANNEL_ID", "").strip()  # Kanal ID'si .env faylidan o'qiladi
-print(f"Loaded CHANNEL_ID: {CHANNEL_ID}")  # Debug uchun
 
 URL_REGEX = re.compile(r"https?://[\w./?=&%-]+", re.IGNORECASE)
 
-async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Foydalanuvchi kanalga a'zo yoki yo'qligini tekshirish"""
-    try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=update.effective_user.id)
-        return member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]
-    except Exception:
-        return False
-
-async def get_subscription_keyboard(context: ContextTypes.DEFAULT_TYPE):
-    """Yopiq kanal uchun request link yaratish"""
-    try:
-        print(f"Using channel ID: {CHANNEL_ID}")  # Debug uchun
-        if not CHANNEL_ID:
-            raise ValueError("CHANNEL_ID not set in environment variables")
-            
-        # Kanaldan yangi request link olish
-        chat = await context.bot.get_chat(CHANNEL_ID)
-        print(f"Successfully got chat: {chat.title}")  # Debug uchun
-        # Eski linklarni o'chirish
-        primary_invite = await chat.export_invite_link()
-        if primary_invite:
-            await context.bot.revoke_chat_invite_link(CHANNEL_ID, primary_invite)
-        
-        # Yangi request link yaratish
-        invite_link = await context.bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID,
-            creates_join_request=True,
-            name="Bot users request"
-        )
-        keyboard = [[InlineKeyboardButton(text="📨 Kanalga qo'shilish uchun so'rov yuborish", url=invite_link.invite_link)]]
-        return InlineKeyboardMarkup(keyboard)
-    except Exception as e:
-        print(f"Error creating invite link: {e}")
-        # Xatolik bo'lsa, oddiy xabar qaytarish
-        keyboard = [[InlineKeyboardButton(text="❌ Kanal topilmadi", callback_data="channel_error")]]
-        return InlineKeyboardMarkup(keyboard)
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_subscription(update, context):
-        keyboard = await get_subscription_keyboard(context)
-        await update.message.reply_text(
-            "👋 VortexFetchBot'ga xush kelibsiz!\n\n❗ Botdan foydalanish uchun kanalimizga qo'shilish uchun so'rov yuborishingiz kerak.\n\n📝 Quyidagi tugmani bosing va so'rov yuboring. Admin tasdiqlashi bilan botdan foydalanishingiz mumkin!",
-            reply_markup=keyboard
-        )
-        return
-    
     await update.message.reply_text(
         "👋 VortexFetchBot'ga xush kelibsiz!\nYouTube, Instagram, TikTok yoki boshqa ijtimoiy tarmoqlardan video havolasini yuboring, men sizga videoni yuklab beraman."
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "ℹ️ *How to use VortexFetchBot:*\n1. Send a video link from any major social network.\n2. Wait a moment while I fetch and send you the video.\n3. Use the audio button to extract audio from videos.\n\n_If you encounter any issues, make sure the link is correct and the video is public._",
+        "ℹ️ *Qanday foydalanish mumkin:*\n1. Istalgan ijtimoiy tarmoqdan video havolasini yuboring.\n2. Biroz kutib turing, men videoni yuklab beraman.\n3. Audio tugmasini bosib, videoning audio versiyasini ham olishingiz mumkin.\n\n_Agar muammo bo'lsa, havola to'g'riligini va video ochiq ekanligini tekshiring._",
         parse_mode="Markdown"
     )
 
@@ -89,7 +41,7 @@ async def extract_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not os.path.exists(video_path):
             part_path = video_path + ".part"
             if os.path.exists(part_path):
-                await query.message.reply_text("❗ Video hali to‘liq yuklab olinmagan. Iltimos, biroz kuting va keyinroq urinib ko‘ring.")
+                await query.message.reply_text("❗ Video hali to'liq yuklab olinmagan. Iltimos, biroz kuting va keyinroq urinib ko'ring.")
                 return
             # Vaqtinchalik video faylini yaratish
             original_message = query.message
@@ -113,7 +65,7 @@ async def extract_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(f"[DEBUG] ffmpeg stderr: {ffmpeg_result.stderr.decode()}")
                 return
             if not os.path.exists(audio_path):
-                await query.message.reply_text("❌ Audio fayli yaratilmagan. Ehtimol, videoda audio trek mavjud emas yoki ffmpeg noto‘g‘ri ishladi.")
+                await query.message.reply_text("❌ Audio fayli yaratilmagan. Ehtimol, videoda audio trek mavjud emas yoki ffmpeg noto'g'ri ishladi.")
                 print(f"[DEBUG] Audio fayli mavjud emas: {audio_path}")
                 return
             print(f"[DEBUG] Audio fayli yaratildi: {audio_path}")
@@ -142,15 +94,6 @@ async def extract_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 import requests
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Kanalga a'zolikni tekshirish
-    if not await check_subscription(update, context):
-        keyboard = await get_subscription_keyboard(context)
-        await update.message.reply_text(
-            "❗ Botdan foydalanish uchun kanalimizga qo'shilish so'rovini yuborishingiz kerak!\n\n📝 Quyidagi tugmani bosing va so'rov yuboring:",
-            reply_markup=keyboard
-        )
-        return
-
     text = update.message.text.strip()
     urls = URL_REGEX.findall(text)
     if not urls:
@@ -222,14 +165,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await update.message.reply_document(file, caption=caption)
                 await msg.delete()
             else:
-                # Video 2 GB dan katta bo‘lsa, siqiladi
+                # Video 2 GB dan katta bo'lsa, siqiladi
                 await msg.edit_text("⚠️ Fayl 2 GB dan katta! Video siqilmoqda, kuting...")
                 from bot.video_compress import compress_video
                 compress_video(video_path, compressed_path, target_size_mb=2000)  # 2 GB limit uchun
                 compressed_size = os.path.getsize(compressed_path)
                 if compressed_size > 2 * 1024 * 1024 * 1024:
-                    # Fayl hamon katta bo‘lsa, foydalanuvchiga link orqali yuklab olishni taklif qilish
-                    await msg.edit_text("❌ Siqilgan video ham 2 GB dan katta. Telegram orqali yuborib bo‘lmaydi. Faylni tashqi hostingga yuklab, link yuborilmoqda...")
+                    # Fayl hamon katta bo'lsa, foydalanuvchiga link orqali yuklab olishni taklif qilish
+                    await msg.edit_text("❌ Siqilgan video ham 2 GB dan katta. Telegram orqali yuborib bo'lmaydi. Faylni tashqi hostingga yuklab, link yuborilmoqda...")
                     try:
                         import requests
                         with open(compressed_path, 'rb') as f:
@@ -237,7 +180,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         if resp.status_code == 200:
                             await msg.edit_text(f"🔗 Faylni bu link orqali yuklab olishingiz mumkin: {resp.text.strip()}")
                         else:
-                            await msg.edit_text("❌ Faylni tashqi hostingga yuklab bo‘lmadi. Iltimos, kichikroq video yuboring.")
+                            await msg.edit_text("❌ Faylni tashqi hostingga yuklab bo'lmadi. Iltimos, kichikroq video yuboring.")
                     except Exception as e:
                         await msg.edit_text(f"❌ Faylni tashqi hostingga yuklashda xatolik: {e}")
                     return
