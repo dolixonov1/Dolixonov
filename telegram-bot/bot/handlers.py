@@ -8,7 +8,8 @@ import subprocess
 from pathlib import Path
 
 DOWNLOAD_DIR = "downloads"
-CHANNEL_ID = os.getenv("CHANNEL_ID")  # Kanal ID'si .env faylidan o'qiladi
+CHANNEL_ID = os.getenv("CHANNEL_ID", "").strip()  # Kanal ID'si .env faylidan o'qiladi
+print(f"Loaded CHANNEL_ID: {CHANNEL_ID}")  # Debug uchun
 
 URL_REGEX = re.compile(r"https?://[\w./?=&%-]+", re.IGNORECASE)
 
@@ -23,8 +24,13 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def get_subscription_keyboard(context: ContextTypes.DEFAULT_TYPE):
     """Yopiq kanal uchun request link yaratish"""
     try:
+        print(f"Using channel ID: {CHANNEL_ID}")  # Debug uchun
+        if not CHANNEL_ID:
+            raise ValueError("CHANNEL_ID not set in environment variables")
+            
         # Kanaldan yangi request link olish
         chat = await context.bot.get_chat(CHANNEL_ID)
+        print(f"Successfully got chat: {chat.title}")  # Debug uchun
         # Eski linklarni o'chirish
         primary_invite = await chat.export_invite_link()
         if primary_invite:
