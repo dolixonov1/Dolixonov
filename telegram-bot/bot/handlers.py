@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMemberStatus
 from telegram.ext import ContextTypes, CallbackQueryHandler
 from bot.downloader import download_video, DownloadError
 import os
@@ -7,12 +7,43 @@ import subprocess
 from pathlib import Path
 
 DOWNLOAD_DIR = "downloads"
+CHANNEL_ID = os.getenv("CHANNEL_USERNAME", "@your_channel")  # Kanal ID'si .env faylidan o'qiladi
 
 URL_REGEX = re.compile(r"https?://[\w./?=&%-]+", re.IGNORECASE)
 
+async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Foydalanuvchi kanalga a'zo yoki yo'qligini tekshirish"""
+    try:
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=update.effective_user.id)
+        return member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]
+    except Exception:
+        return False
+
+async def get_subscription_keyboard(context: ContextTypes.DEFAULT_TYPE):
+    """Yopiq kanal uchun invite link olish va tugma yaratish"""
+    try:
+        # Kanaldan invite link olish
+        chat = await context.bot.get_chat(CHANNEL_ID)
+        invite_link = await chat.export_invite_link()
+        keyboard = [[InlineKeyboardButton(text="➕ Kanalga a'zo bo'lish", url=invite_link)]]
+        return InlineKeyboardMarkup(keyboard)
+    except Exception as e:
+        print(f"Error creating invite link: {e}")
+        # Xatolik bo'lsa, admin bilan bog'lanish tugmasini qaytarish
+        keyboard = [[InlineKeyboardButton(text="👨‍💻 Admin bilan bog'lanish", url="https://t.me/your_admin_username")]]
+        return InlineKeyboardMarkup(keyboard)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_subscription(update, context):
+        keyboard = await get_subscription_keyboard(context)
+        await update.message.reply_text(
+            "👋 VortexFetchBot'ga xush kelibsiz!\n\n❗ Botdan foydalanish uchun kanalimizga a'zo bo'lishingiz kerak!",
+            reply_markup=keyboard
+        )
+        return
+    
     await update.message.reply_text(
-        "👋 Welcome to VortexFetchBot!\nJust send me a video link from YouTube, Instagram, TikTok, or other social platforms, and I will fetch the video for you."
+        "👋 VortexFetchBot'ga xush kelibsiz!\nYouTube, Instagram, TikTok yoki boshqa ijtimoiy tarmoqlardan video havolasini yuboring, men sizga videoni yuklab beraman."
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -94,6 +125,15 @@ async def extract_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 import requests
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Kanalga a'zolikni tekshirish
+    if not await check_subscription(update, context):
+        keyboard = await get_subscription_keyboard(context)
+        await update.message.reply_text(
+            "❗ Botdan foydalanish uchun kanalimizga a'zo bo'lishingiz kerak!",
+            reply_markup=keyboard
+        )
+        return
+
     text = update.message.text.strip()
     urls = URL_REGEX.findall(text)
     if not urls:
