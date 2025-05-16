@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 DOWNLOAD_DIR = "downloads"
-CHANNEL_ID = os.getenv("CHANNEL_USERNAME", "@your_channel")  # Kanal ID'si .env faylidan o'qiladi
+CHANNEL_ID = os.getenv("CHANNEL_ID")  # Kanal ID'si .env faylidan o'qiladi
 
 URL_REGEX = re.compile(r"https?://[\w./?=&%-]+", re.IGNORECASE)
 
@@ -21,24 +21,34 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return False
 
 async def get_subscription_keyboard(context: ContextTypes.DEFAULT_TYPE):
-    """Yopiq kanal uchun invite link olish va tugma yaratish"""
+    """Yopiq kanal uchun request link yaratish"""
     try:
-        # Kanaldan invite link olish
+        # Kanaldan yangi request link olish
         chat = await context.bot.get_chat(CHANNEL_ID)
-        invite_link = await chat.export_invite_link()
-        keyboard = [[InlineKeyboardButton(text="➕ Kanalga a'zo bo'lish", url=invite_link)]]
+        # Eski linklarni o'chirish
+        primary_invite = await chat.export_invite_link()
+        if primary_invite:
+            await context.bot.revoke_chat_invite_link(CHANNEL_ID, primary_invite)
+        
+        # Yangi request link yaratish
+        invite_link = await context.bot.create_chat_invite_link(
+            chat_id=CHANNEL_ID,
+            creates_join_request=True,
+            name="Bot users request"
+        )
+        keyboard = [[InlineKeyboardButton(text="📨 Kanalga qo'shilish uchun so'rov yuborish", url=invite_link.invite_link)]]
         return InlineKeyboardMarkup(keyboard)
     except Exception as e:
         print(f"Error creating invite link: {e}")
-        # Xatolik bo'lsa, admin bilan bog'lanish tugmasini qaytarish
-        keyboard = [[InlineKeyboardButton(text="👨‍💻 Admin bilan bog'lanish", url="https://t.me/your_admin_username")]]
+        # Xatolik bo'lsa, oddiy xabar qaytarish
+        keyboard = [[InlineKeyboardButton(text="❌ Kanal topilmadi", callback_data="channel_error")]]
         return InlineKeyboardMarkup(keyboard)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(update, context):
         keyboard = await get_subscription_keyboard(context)
         await update.message.reply_text(
-            "👋 VortexFetchBot'ga xush kelibsiz!\n\n❗ Botdan foydalanish uchun kanalimizga a'zo bo'lishingiz kerak!",
+            "👋 VortexFetchBot'ga xush kelibsiz!\n\n❗ Botdan foydalanish uchun kanalimizga qo'shilish uchun so'rov yuborishingiz kerak.\n\n📝 Quyidagi tugmani bosing va so'rov yuboring. Admin tasdiqlashi bilan botdan foydalanishingiz mumkin!",
             reply_markup=keyboard
         )
         return
@@ -130,7 +140,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(update, context):
         keyboard = await get_subscription_keyboard(context)
         await update.message.reply_text(
-            "❗ Botdan foydalanish uchun kanalimizga a'zo bo'lishingiz kerak!",
+            "❗ Botdan foydalanish uchun kanalimizga qo'shilish so'rovini yuborishingiz kerak!\n\n📝 Quyidagi tugmani bosing va so'rov yuboring:",
             reply_markup=keyboard
         )
         return
